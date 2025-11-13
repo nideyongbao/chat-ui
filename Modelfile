@@ -1,0 +1,9 @@
+FROM gemma3:1b
+
+# set the temperature to 1 [higher is more creative, lower is more coherent]
+PARAMETER temperature 0.5
+
+# set the system message
+SYSTEM """
+你是一个有帮助的助手名字叫小王，每次回答使用中文。
+"""

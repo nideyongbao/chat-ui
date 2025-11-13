@@ -550,6 +550,26 @@
                                         :label="$t('$vuetify.dataIterator.i.model')" :items="defaultChoiceStore.model"
                                         v-model="chatbotStore.model" variant="outlined">
                                     </v-combobox>
+
+
+                                    <!-- ---------------------------------------------- -->
+                                    <!-- systemPrompt -->
+                                    <!-- ---------------------------------------------- -->
+                                    <v-textarea
+                                    density="compact"
+                                    color="primary"
+                                    variant="outlined"
+                                    v-model="chatbotStore.systemPrompt"
+                                    class="px-2 mb-4"
+                                    :label="$t('$vuetify.dataIterator.i.systemPrompt')"
+                                    prepend-inner-icon="mdi-account-cog"
+                                    clearable
+                                    rows="2"
+                                    auto-grow
+                                    max-rows="6"
+                                    hint="Sent as the first system message in every conversation"
+                                    persistent-hint
+                                    />
                                 </v-expansion-panel-text>
                             </v-expansion-panel>
 
@@ -926,19 +946,38 @@
                         </v-avatar>
                         <tuui-chat-card :index="group.index" :messages="messages" :show-content="true">
                             <template v-slot:default="{ showcontent }">
-                                <v-card-text v-if="group.message.reasoning_content" class="md-preview pt-1">
-                                    <v-textarea class="conversation-area text-disabled font-italic" variant="plain"
-                                        density='compact' auto-grow hide-details rows="1" readonly
-                                        v-model="group.message.reasoning_content"></v-textarea>
-                                </v-card-text>
+                                <!-- 思考过程：默认收缩 -->
+                                <v-expansion-panels v-if="group.message.reasoning_content" flat>
+                                    <v-expansion-panel>
+                                        <v-expansion-panel-title class="text-caption text-disabled font-italic">
+                                            思考过程（点击展开）
+                                        </v-expansion-panel-title>
+                                        <v-expansion-panel-text class="font-italic">
+                                            <v-textarea
+                                                class="conversation-area text-disabled font-italic"
+                                                variant="plain"
+                                                density="compact"
+                                                auto-grow
+                                                hide-details
+                                                rows="1"
+                                                readonly
+                                                v-model="group.message.reasoning_content"
+                                            />
+                                        </v-expansion-panel-text>
+                                    </v-expansion-panel>
+                                </v-expansion-panels>
+
+                                <!-- 正式回答：保持原样 -->
                                 <v-card-text v-if="showcontent" class="md-preview pt-1">
-                                    <v-textarea class="conversation-area" variant="plain" density='compact' auto-grow
-                                        hide-details rows="1" readonly v-model="group.message.content"></v-textarea>
+                                    <v-textarea class="conversation-area" variant="plain" density="compact"
+                                                auto-grow hide-details rows="1" readonly
+                                                v-model="group.message.content"></v-textarea>
                                 </v-card-text>
                                 <v-card-text v-else class="md-preview px-4 py-3">
                                     <md-preview :model-value="group.message.content"
-                                        :language="language == 'zhHans' ? 'zh-CN' : 'en-US'" :code-foldable="true"
-                                        auto-fold-threshold="Infinity"></md-preview>
+                                                :language="language == 'zhHans' ? 'zh-CN' : 'en-US'"
+                                                :code-foldable="true"
+                                                auto-fold-threshold="Infinity"></md-preview>
                                 </v-card-text>
                             </template>
                         </tuui-chat-card>
@@ -1932,17 +1971,24 @@
                 const useDefaultChoiceStore = defineStore("defaultChoiceStore", {
                     state: () => ({
                         url: [
+                            "http://127.0.0.1:11434",
                             "https://api.openai.com",
                             "http://127.0.0.1",
                             "https://api.deepinfra.com",
                             "https://api.deepseek.com",
                             "https://api.aiql.com"],
                         path: [
+                            "/api/chat",
                             "/chat/completions",
                             "/v1/chat/completions",
                             "/v1/openai/chat/completions",
                             "/openai/v1/chat/completions"],
                         model: [
+                            "qwen3:4b",
+                            "deepseek-r1:1.5b",
+                            "gemma3:1b",
+                            "qwen3-vl:2b",
+                            "qwen2.5-coder:1.5b-base",
                             "Qwen/Qwen3-32B",
                             "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
                             "openai/gpt-oss-120b"
@@ -1974,6 +2020,7 @@
                         url: "https://api2.aiql.com",
                         path: "/chat/completions",
                         model: "Qwen/Qwen3-32B",
+                        systemPrompt: "",          // ← 新增
                         authPrefix: "Bearer",
                         contentType: "application/json",
                         max_tokens_type: "max_tokens",
@@ -2037,10 +2084,20 @@
 
                         if (chatbotStore.apiKey) headers.Authorization = `${chatbotStore.authPrefix} ${chatbotStore.apiKey}`
 
+                        //const body = {
+                        //    messages: agentStore.promptMessage(conversation),
+                        //    model: chatbotStore.model,
+                        //    stream: chatbotStore.stream,
+                        //}
+                        const messages = agentStore.promptMessage(conversation);
+                        if (chatbotStore.systemPrompt && chatbotStore.systemPrompt.trim()) {
+                        messages.unshift({ role: 'system', content: chatbotStore.systemPrompt.trim() });
+                        }
+                        //console.log('实际发出的 messages', JSON.stringify(messages, null, 2));   // ← 新增
                         const body = {
-                            messages: agentStore.promptMessage(conversation),
-                            model: chatbotStore.model,
-                            stream: chatbotStore.stream,
+                        messages,
+                        model: chatbotStore.model,
+                        stream: chatbotStore.stream,
                         }
 
                         if (chatbotStore.max_tokens_value) {
@@ -2126,18 +2183,33 @@
                     buffer,
                     stream
                 ) => {
+                    //console.log('read() 开始');   
                     // TextDecoder is a built-in object that allows you to convert a stream of bytes into a string
                     const decoder = new TextDecoder();
                     // Destructure the value returned by reader.read()
                     const { done, value } = await reader.read();
-
+                    //console.log('reader.read()', { done, value }); // ← 新增
                     // If the stream is done reading, release the lock on the reader
                     if (done || !messageStore.generating) {
-                        messageStore.generating = false;
+                        //console.log('read 提前 return：done 或 generating=false');
                         return reader.releaseLock();
                     }
-                    // Convert the stream of bytes into a string
-                    const chunks = decoder.decode(value);
+
+                    const chunks = decoder.decode(value, { stream: true }); // 注意加 stream: true
+                    //console.log('解码后 chunks', chunks);
+                    console.log('[RAW SSE]', JSON.stringify(chunks));   // ← 新增
+                    const lines = chunks.split('\n').filter(l => l.trim());
+                    //console.log('有效行 lines', lines);
+
+
+                    //旧代码只认识“OpenAI 格式 SSE”（每行以 data: 开头），而 Ollama 输出的是裸 JSON（没有 data: 前缀），导致
+                    //if (name !== 'data') return;
+                    //直接把所有有效行过滤掉，parseJson 永远进不去，页面自然空白。
+                    for (const line of lines) {
+                        //console.log('准备 parseJson 的行', line);
+                        parseJson(line, target);   // 就是这行
+                    }
+                
 
                     if (stream) {
                         // Split stream
@@ -2185,18 +2257,26 @@
                 };
 
                 const parseJson = (content, target) => {
+                    console.log('[parseJson] 收到的content:', content); // ← 新增
+                    //console.log('parseJson 开始', content);          // ← 必须出现
                     try {
-                        const parsed = JSON.parse(content)
-                        // const choice = 
-                        parseChoices(parsed, target)
-                        // parseChoice(choice, target)
+                        const parsed = JSON.parse(content);
+                        //console.log('parseJson 解析成功', parsed);
+                        parseChoices(parsed, target);
                     } catch (e) {
-                        console.log(e, content)
-                        parseChoice(content, target)
+                        //console.log('parseJson catch 错误', e);
+                        // 你原来这里可能直接 return，导致静默失败
                     }
                 };
 
                 const parseChoices = (parsed, target) => {
+                    console.log('[parseChoices] 收到的parsed:', JSON.stringify(parsed)); 
+                    /* 0. Ollama 直接返回 { message:{...} } */
+                    if (parsed.message) {
+                        return parseChoice(parsed.message, target);
+                    }
+
+
                     if ('choices' in parsed) {
                         return parsed.choices.map((choice) => {
                             const content = choice.delta || choice.message
@@ -2210,21 +2290,26 @@
                 };
 
                 const parseChoice = (choice, target) => {
-                    if (choice) {
-                        if (target.role == 'assistant') {
-                            if (typeof choice === 'string') {
-                                target.content += choice;
-                            } else {
-                                if (typeof choice.content === 'string') {
-                                    target.content += choice.content;
-                                }
-                                if (typeof choice.reasoning_content === 'string') {
-                                    target.reasoning_content += choice.reasoning_content;
-                                }
-                            }
-                            parseTool(choice.tool_calls, target)
-                        }
-                    }
+                console.log('[parseChoice] delta.content:', JSON.stringify(choice.delta?.content));
+                console.log('[parseChoice] target.content before:', JSON.stringify(target.content));
+                // console.log('--- parseChoice 被调用 ---', choice);
+                if (!choice) return;
+
+                // 1. thinking 片段（qwen3 专有字段）
+                if (choice.thinking != null) {
+                    target.reasoning_content += choice.thinking;   // 可选：单独存
+                    // 如果你想让 thinking 直接出现在聊天框，也可以：
+                    // target.content += choice.thinking;
+                }
+
+                // 2. 正式回答
+                if (choice.content != null) {
+                    target.content += choice.content;
+                }
+
+
+                // 工具调用（Ollama 同样放在 tool_calls 字段）
+                parseTool(choice.tool_calls, target);
                 };
 
                 const parseTool = (tools, target) => {
@@ -2483,6 +2568,7 @@
                             url: 'URL',
                             path: 'Path',
                             model: 'Model',
+                            systemPrompt: 'System Prompt',
                             advanced: 'Advanced',
                             method: 'HTTP Method',
                             stream: 'Stream',
@@ -2520,6 +2606,7 @@
                             url: 'URL',
                             path: 'Path',
                             model: 'Modello',
+                            systemPrompt: 'System Prompt',
                             advanced: 'Configurazione Avanzata',
                             method: 'HTTP Metodo',
                             stream: 'Stream',
@@ -2622,6 +2709,7 @@
                             url: '网址',
                             path: '路径',
                             model: '模型',
+                            systemPrompt: 'System Prompt',
                             advanced: '高级配置',
                             method: 'HTTP 请求方法',
                             stream: '流式输出',

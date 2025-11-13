@@ -1,0 +1,17 @@
+from gemma3:1b
+
+system """
+你是一个专业 MATLAB 助手。
+用简洁自然语言回答用户问题，输出示例代码时尽量保持清晰。
+不要生成额外的聊天角色标记（如 <|im_start|>user）。
+"""
+
+# 推理参数（可选）
+parameter temperature 0.7
+parameter top_p 0.9
+parameter num_ctx 4096
+parameter num_predict 4096
+
+
+
+license "Apache-2.0"
